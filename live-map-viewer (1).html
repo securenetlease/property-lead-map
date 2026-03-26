@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Property Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
+
+
+  button {
+    padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer;
+    border: 1px solid #ccc; background: white; color: #333; white-space: nowrap;
+  }
+  button:hover { background: #f0f0f0; }
+  button.primary { background: #1a73e8; color: white; border-color: #1a73e8; }
+  button.primary:hover { background: #1558b0; }
+
+  #status-bar {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 1000;
+    background: white; border-top: 1px solid #e0e0e0;
+    padding: 6px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    font-size: 12px; color: #555;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; display: inline-block; margin-right: 4px; }
+  .dot.green { background: #34a853; }
+  .dot.yellow { background: #fbbc04; }
+  .dot.red { background: #ea4335; }
+  #countdown { font-weight: 600; color: #c0392b; }
+
+  #toolbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+    background: rgba(255,255,255,0.08); border-bottom: 1px solid rgba(255,255,255,0.15); backdrop-filter: blur(12px);
+    padding: 0 16px; height: 52px;
+    display: flex; align-items: center; gap: 16px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+  }
+  #toolbar-title {
+    font-size: 15px; font-weight: 600; color: #1a2a3a;
+    white-space: nowrap; letter-spacing: 0.02em;
+  }
+  #toolbar-title span { color: #c0392b; }
+  #toolbar-search {
+    flex: 1; max-width: 340px;
+    position: relative;
+  }
+  #toolbar-search input {
+    width: 100%; padding: 7px 14px 7px 34px;
+    border: 1px solid #dde3ea; border-radius: 20px;
+    font-size: 13px; outline: none; background: #f7f9fb; color: #1a2a3a;
+  }
+  #toolbar-search input:focus { border-color: #8a9eb0; background: white; }
+  #toolbar-search input::placeholder { color: #9aadbe; }
+  #toolbar-search .search-icon {
+    position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+    color: #9aadbe; font-size: 13px; pointer-events: none;
+  }
+  #toolbar-filter select {
+    padding: 6px 10px; border: 1px solid #dde3ea; border-radius: 6px;
+    font-size: 13px; background: white; color: #1a2a3a; cursor: pointer;
+  }
+  #toolbar-count {
+    font-size: 12px; color: #6a7f90; white-space: nowrap; margin-left: auto;
+  }
+  #toolbar-count strong { color: #1a2a3a; }
+  #map { position: fixed; top: 52px; bottom: 0; left: 0; right: 0; }
+
+
+  .leaflet-popup-content {
+    font-size: 13px; line-height: 1.5;
+    min-width: 200px; max-width: 300px;
+  }
+  .popup-title {
+    font-size: 14px; font-weight: 600; color: #111;
+    margin-bottom: 8px; padding-bottom: 6px;
+    border-bottom: 1px solid #eee;
+  }
+  .popup-address {
+    font-size: 12px; color: #555; margin-bottom: 8px;
+  }
+  .popup-row {
+    display: flex; justify-content: space-between; gap: 8px;
+    padding: 3px 0; border-bottom: 1px solid #f5f5f5; font-size: 12px;
+  }
+  .popup-row:last-child { border-bottom: none; }
+  .popup-label { color: #888; flex-shrink: 0; }
+  .popup-value { color: #222; text-align: right; font-weight: 500; }
+  .stage-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 600; background: #e8f0fe; color: #1a73e8;
+  }
+  .popup-notes {
+    font-size: 12px; color: #444; margin-top: 8px; padding-top: 6px;
+    border-top: 1px solid #eee; line-height: 1.5;
+  }
+
+  #setup-panel {
+    position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,0.45);
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  .panel-card {
+    background: white; border-radius: 12px; padding: 28px 32px;
+    max-width: 500px; width: 100%;
+  }
+  .panel-card h2 { font-size: 18px; margin-bottom: 8px; }
+  .panel-card p { font-size: 13px; color: #555; line-height: 1.6; margin-bottom: 16px; }
+  .panel-card ol { font-size: 13px; color: #444; line-height: 2.2; padding-left: 20px; margin-bottom: 20px; }
+  .panel-card ol code { background: #f5f5f5; padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+  .panel-card label { font-size: 13px; font-weight: 500; display: block; margin-bottom: 6px; }
+  .panel-card input[type=text] {
+    width: 100%; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px;
+    font-size: 13px; margin-bottom: 4px;
+  }
+  .hint { font-size: 11px; color: #999; margin-bottom: 16px; }
+  #error-msg { color: #ea4335; font-size: 13px; margin-top: 10px; display: none; }
+
+  #loading-overlay {
+    position: fixed; inset: 0; z-index: 2000;
+    background: rgba(255,255,255,0.88);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 16px;
+  }
+  #loading-overlay .spinner {
+    width: 40px; height: 40px; border-radius: 50%;
+    border: 4px solid #dde3ea; border-top-color: #c0392b;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading-overlay .loading-text {
+    font-size: 15px; font-weight: 500; color: #1a2a3a;
+  }
+  #loading-overlay .loading-sub {
+    font-size: 13px; color: #6a7f90; margin-top: -8px;
+  }
+
+  #search-results {
+    position: absolute; top: 36px; left: 0;
+    width: 100%; background: white; border-radius: 0 0 12px 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12); overflow: hidden;
+    display: none; max-height: 300px; overflow-y: auto; z-index: 999;
+  }
+  .search-result {
+    padding: 10px 16px; cursor: pointer; font-size: 13px;
+    border-bottom: 1px solid #eef1f4; display: flex; align-items: center; gap: 10px;
+  }
+  .search-result:last-child { border-bottom: none; }
+  .search-result:hover { background: #f4f7fa; }
+  .search-result .result-icon { font-size: 16px; flex-shrink: 0; }
+  .search-result .result-name { font-weight: 500; color: #1a2a3a; }
+  .search-result .result-sub { font-size: 12px; color: #8a9eb0; margin-top: 1px; }
+  #filter-bar {
+    position: fixed; top: 12px; left: 12px; z-index: 999;
+    background: white; border: 1px solid #dde3ea; border-radius: 8px;
+    padding: 8px 12px; font-size: 12px; display: none; flex-direction: column; gap: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  #filter-bar label { font-weight: 500; color: #1a2a3a; }
+  #stage-filter, #type-filter { padding: 4px 8px; border: 1px solid #2d3f52; border-radius: 4px; font-size: 12px; background: white; color: #1a2a3a; }
+
+</style>
+</head>
+<body>
+
+
+
+
+
+<div id="toolbar">
+  <div id="toolbar-title">SITE <span>SELECTION</span></div>
+  <div id="toolbar-search" style="position:relative;flex:1;max-width:340px;z-index:1001;">
+    <span style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:#9aadbe;font-size:13px;pointer-events:none;">🔍</span>
+    <input type="text" id="search-input" placeholder="Search properties or cities..." autocomplete="off" style="width:100%;padding:7px 30px 7px 34px;border:1px solid #dde3ea;border-radius:20px;font-size:13px;outline:none;background:#f7f9fb;color:#1a2a3a;box-sizing:border-box;"/>
+    <span id="search-clear" onclick="clearSearch()" style="display:none;position:absolute;right:11px;top:50%;transform:translateY(-50%);cursor:pointer;color:#9aadbe;font-size:16px;line-height:1;padding:2px;">×</span>
+    <div id="search-results"></div>
+  </div>
+  <div id="type-filter-wrapper" style="position:relative;">
+    <button id="type-filter-btn" onclick="toggleFilterMenu()" style="padding:6px 12px;border:1px solid #dde3ea;border-radius:6px;font-size:13px;background:white;color:#1a2a3a;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;">
+      <span id="type-filter-label">All types</span> <span style="font-size:10px;color:#9aadbe;">▼</span>
+    </button>
+    <div id="type-filter-menu" style="display:none;position:absolute;top:36px;left:0;background:white;border:1px solid #dde3ea;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);padding:8px 0;z-index:2000;min-width:150px;">
+      <label style="display:flex;align-items:center;gap:8px;padding:6px 14px;cursor:pointer;font-size:13px;color:#1a2a3a;"><input type="checkbox" value="Building" checked onchange="applyFilter()"> Building</label>
+      <label style="display:flex;align-items:center;gap:8px;padding:6px 14px;cursor:pointer;font-size:13px;color:#1a2a3a;"><input type="checkbox" value="Land" checked onchange="applyFilter()"> Land</label>
+      <label style="display:flex;align-items:center;gap:8px;padding:6px 14px;cursor:pointer;font-size:13px;color:#1a2a3a;"><input type="checkbox" value="Truckstop" checked onchange="applyFilter()"> Truckstop</label>
+      <label style="display:flex;align-items:center;gap:8px;padding:6px 14px;cursor:pointer;font-size:13px;color:#1a2a3a;"><input type="checkbox" value="Pending" checked onchange="applyFilter()"> Pending</label>
+    </div>
+  </div>
+  <button onclick="map.closePopup(); map.flyTo([43.5, -96.7], 5, { animate: true, duration: 1.2 })" style="padding:6px 12px;border:1px solid #dde3ea;border-radius:6px;font-size:13px;background:white;color:#1a2a3a;cursor:pointer;white-space:nowrap;">Reset</button>
+  <div id="toolbar-count" style="font-size:12px;color:#6a7f90;white-space:nowrap;margin-left:auto;">Showing <strong id="pin-count-toolbar">—</strong> properties</div>
+</div>
+
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <div class="loading-text">Loading properties...</div>
+  <div class="loading-sub">Fetching data from your sheet</div>
+</div>
+<div id="map"></div>
+
+
+
+
+  <div id="legend" style="position:fixed;bottom:40px;right:12px;z-index:999;background:white;border:1px solid #ddd;border-radius:8px;padding:10px 14px;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+    <div style="font-weight:600;margin-bottom:6px;color:#1a2a3a;">Property Type</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+      <svg width="14" height="20" viewBox="0 0 28 40"><path d="M14 0 C6.268 0 0 6.268 0 14 C0 24.5 14 40 14 40 C14 40 28 24.5 28 14 C28 6.268 21.732 0 14 0 Z" fill="#B8C8D8" stroke="#8FA5B8" stroke-width="1.5"/><circle cx="14" cy="14" r="6" fill="white" opacity="0.9"/></svg>
+      <span style="color:#1a2a3a;">Building</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+      <svg width="14" height="20" viewBox="0 0 28 40"><path d="M14 0 C6.268 0 0 6.268 0 14 C0 24.5 14 40 14 40 C14 40 28 24.5 28 14 C28 6.268 21.732 0 14 0 Z" fill="#A8C5A0" stroke="#7DA876" stroke-width="1.5"/><circle cx="14" cy="14" r="6" fill="white" opacity="0.9"/></svg>
+      <span style="color:#1a2a3a;">Land</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <svg width="14" height="20" viewBox="0 0 28 40"><path d="M14 0 C6.268 0 0 6.268 0 14 C0 24.5 14 40 14 40 C14 40 28 24.5 28 14 C28 6.268 21.732 0 14 0 Z" fill="#F5E6A3" stroke="#D4C46A" stroke-width="1.5"/><circle cx="14" cy="14" r="6" fill="white" opacity="0.9"/></svg>
+      <span style="color:#1a2a3a;">Truckstop</span>
+    </div>
+  <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+    <svg width="14" height="20" viewBox="0 0 28 40"><path d="M14 0 C6.268 0 0 6.268 0 14 C0 24.5 14 40 14 40 C14 40 28 24.5 28 14 C28 6.268 21.732 0 14 0 Z" fill="#F4A56A" stroke="#D4824A" stroke-width="1.5" opacity="0.88"/><circle cx="14" cy="14" r="6" fill="white" opacity="0.9"/></svg>
+    <span style="color:#1a2a3a;">Pending</span>
+  </div>
+  </div>
+
+
+<div id="status-bar" style="display:none;">
+  <span><span class="dot" id="status-dot"></span><span id="status-text">Loading...</span></span>
+  <span>|</span>
+  <span id="pin-count">0 properties</span>
+  <span>|</span>
+  <span>Refresh in <span id="countdown">5:00</span></span>
+  <span>|</span>
+  <span id="last-updated"></span>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const REFRESH_MS = 5 * 60 * 1000;
+const COL_LATLNG  = 'Latitude / Longitude';
+const COL_ADDRESS = 'Property Address Full';
+const COL_CITY    = 'Property City';
+const COL_STATE   = 'Property State';
+const COL_NAME    = 'Contact Name';
+const COL_OWNER   = 'Owner Type';
+const COL_PRICE   = 'Price';
+const COL_SF      = '$/SF';
+const COL_ACRES   = 'Acres';
+const COL_UTILITIES = 'Utilities';
+const COL_VPD = 'VPD  Primary';
+const COL_POP = '1-Mile Pop.';
+const COL_INCOME = '1-Mile Income';
+const COL_STAGE   = 'Stage';
+const COL_NOTES   = 'Property Notes';
+const COL_TYPE    = 'Property Type';
+const COL_ZIP     = 'Zip';
+
+let map, markersLayer;
+let allRows = [];
+let refreshTimer = null, countdownTimer = null, countdownVal = 300;
+let csvUrl = '';
+
+function initMap() {
+  map = L.map('map').setView([38.5, -96.0], 5);
+  map.createPane('labels');
+  map.getPane('labels').style.zIndex = 450;
+  map.getPane('labels').style.pointerEvents = 'none';
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/">OpenStreetMap</a> © <a href="https://carto.com/">CARTO</a>',
+    subdomains: 'abcd',
+    maxZoom: 19
+  }).addTo(map);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd',
+    maxZoom: 19,
+    pane: 'labels'
+  }).addTo(map);
+  markersLayer = L.layerGroup().addTo(map);
+}
+
+function parseCSV(text) {
+  const lines = text.replace(/\r/g,'').split('\n').filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const headers = parseRow(lines[0]);
+  return lines.slice(1).map(line => {
+    const vals = parseRow(line);
+    const obj = {};
+    headers.forEach((h, i) => obj[h.trim()] = (vals[i] || '').trim());
+    return obj;
+  }).filter(r => Object.values(r).some(v => v));
+}
+
+function parseRow(line) {
+  const result = []; let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { inQ = !inQ; }
+    else if (c === ',' && !inQ) { result.push(cur); cur = ''; }
+    else cur += c;
+  }
+  result.push(cur);
+  return result;
+}
+
+function parseLatLng(val) {
+  if (!val) return null;
+  const parts = val.split(',').map(s => parseFloat(s.trim()));
+  if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+    return { lat: parts[0], lng: parts[1] };
+  }
+  return null;
+}
+
+function fmt(val) { return val && val.trim() ? val.trim() : null; }
+
+
+function cleanAddress(addr) {
+  if (!addr) return addr;
+
+  // Strip leading/trailing underscores, dashes, spaces
+  addr = addr.replace(/^[_\-\s]+/, '').replace(/[_\-\s]+$/, '');
+
+  // Fix missing comma between city and state: "Tulsa OK" -> "Tulsa, OK"
+  const states = 'AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY';
+  addr = addr.replace(new RegExp('([a-zA-Z])\\s+(' + states + ')\\s*(\\d{5})?', 'g'), (m, pre, st, zip) => {
+    return pre + ', ' + st.toUpperCase() + (zip ? ' ' + zip : '');
+  });
+
+  // Title case each word except known abbreviations and directionals
+  const abbrevs = {
+    'street': 'St', 'st': 'St', 'avenue': 'Ave', 'ave': 'Ave',
+    'boulevard': 'Blvd', 'blvd': 'Blvd', 'highway': 'Hwy', 'hwy': 'Hwy',
+    'road': 'Rd', 'rd': 'Rd', 'drive': 'Dr', 'dr': 'Dr',
+    'lane': 'Ln', 'ln': 'Ln', 'court': 'Ct', 'ct': 'Ct',
+    'circle': 'Cir', 'cir': 'Cir', 'place': 'Pl', 'pl': 'Pl',
+    'trail': 'Trl', 'trl': 'Trl', 'parkway': 'Pkwy', 'pkwy': 'Pkwy',
+    'way': 'Way', 'loop': 'Loop', 'pass': 'Pass',
+    'n': 'N', 's': 'S', 'e': 'E', 'w': 'W',
+    'ne': 'NE', 'nw': 'NW', 'se': 'SE', 'sw': 'SW',
+  };
+
+  // Split on commas to preserve structure
+  const parts = addr.split(',').map(part => {
+    return part.trim().split(' ').map(word => {
+      const lower = word.toLowerCase().replace(/[^a-z]/g, '');
+      if (abbrevs[lower]) return abbrevs[lower];
+      // Keep state abbreviations uppercase
+      if (/^[A-Z]{2}$/.test(word)) return word;
+      // Keep ZIP codes as-is
+      if (/^\d{5}(-\d{4})?$/.test(word)) return word;
+      // Title case everything else
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    }).join(' ');
+  });
+
+  return parts.join(', ');
+}
+
+function buildPopup(row) {
+  const name    = fmt(row[COL_NAME]);
+  const address = fmt(row[COL_ADDRESS]);
+  const acres   = fmt(row[COL_ACRES]);
+  const notes   = fmt(row[COL_NOTES]);
+
+  let html = '';
+  if (address) html += `<div class="popup-title">${address}</div>`;
+  const propType = fmt(row[COL_TYPE]);
+  if (propType) html += `<div class="popup-row"><span class="popup-label">Type</span><span class="popup-value">${propType}</span></div>`;
+  if (acres)   html += `<div class="popup-row"><span class="popup-label">Size</span><span class="popup-value">${acres} Acres</span></div>`;
+  const utilities = fmt(row[COL_UTILITIES]);
+  if (utilities) html += `<div class="popup-row"><span class="popup-label">Utilities</span><span class="popup-value">${utilities}</span></div>`;
+  const vpd = fmt(row[COL_VPD]);
+  const vpdFormatted = vpd ? Number(vpd.replace(/,/g,'')).toLocaleString() : null;
+  if (vpdFormatted && vpdFormatted !== 'NaN') html += `<div class="popup-row"><span class="popup-label">VPD</span><span class="popup-value">${vpdFormatted}</span></div>`;
+  else if (vpd) html += `<div class="popup-row"><span class="popup-label">VPD</span><span class="popup-value">${vpd}</span></div>`;
+  const pop = fmt(row[COL_POP]);
+  const popFormatted = pop ? Number(pop.replace(/,/g,'')).toLocaleString() : null;
+  if (popFormatted && popFormatted !== 'NaN') html += `<div class="popup-row"><span class="popup-label">1-Mile Pop</span><span class="popup-value">${popFormatted}</span></div>`;
+  else if (pop) html += `<div class="popup-row"><span class="popup-label">1-Mile Pop</span><span class="popup-value">${pop}</span></div>`;
+  const income = fmt(row[COL_INCOME]);
+  const incomeFormatted = income ? '$' + Number(income.replace(/[$,]/g,'')).toLocaleString() : null;
+  if (incomeFormatted && incomeFormatted !== '$NaN') html += `<div class="popup-row"><span class="popup-label">1-Mile Income</span><span class="popup-value">${incomeFormatted}</span></div>`;
+  else if (income) html += `<div class="popup-row"><span class="popup-label">1-Mile Income</span><span class="popup-value">${income}</span></div>`;
+  if (notes)   html += `<div class="popup-notes"><strong>Property Notes:</strong><br>${notes}</div>`;
+  return html || '<em>No data</em>';
+}
+
+
+function makePin(color, borderColor) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="26" viewBox="0 0 28 40" opacity="0.88">
+    <path d="M14 0 C6.268 0 0 6.268 0 14 C0 24.5 14 40 14 40 C14 40 28 24.5 28 14 C28 6.268 21.732 0 14 0 Z" fill="${color}" stroke="${borderColor}" stroke-width="1.5"/>
+    <circle cx="14" cy="14" r="6" fill="white" opacity="0.9"/>
+  </svg>`;
+  return L.divIcon({
+    html: svg,
+    className: '',
+    iconSize: [18, 26],
+    iconAnchor: [9, 26],
+    popupAnchor: [0, -26]
+  });
+}
+
+const PIN_ICONS = {
+  'building':   makePin('#B8C8D8', '#8FA5B8'),
+  'land':       makePin('#A8C5A0', '#7DA876'),
+  'truckstop':  makePin('#F5E6A3', '#D4C46A'),
+  'pending':    makePin('#F4A56A', '#D4824A'),
+  'default':    makePin('#B8C8D8', '#8FA5B8')
+};
+
+function getIcon(row) {
+  const type = (row[COL_TYPE] || '').toLowerCase().trim();
+  if (type.includes('building')) return PIN_ICONS.building;
+  if (type.includes('land')) return PIN_ICONS.land;
+  if (type.includes('truckstop') || type.includes('truck')) return PIN_ICONS.truckstop;
+  if (type.includes('pending')) return PIN_ICONS.pending;
+  return PIN_ICONS.default;
+}
+
+function renderMarkers(rows) {
+  markersLayer.clearLayers();
+  const bounds = [];
+  let ok = 0, skip = 0;
+
+  rows.forEach(row => {
+    const coords = parseLatLng(row[COL_LATLNG]);
+    if (!coords) { skip++; return; }
+    ok++;
+    bounds.push([coords.lat, coords.lng]);
+    const marker = L.marker([coords.lat, coords.lng], { icon: getIcon(row) });
+    marker.bindPopup(buildPopup(row), { maxWidth: 320 });
+    marker.on('click', function() {
+      map.flyTo([coords.lat, coords.lng], 14, { animate: true, duration: 1.2 });
+    });
+    markersLayer.addLayer(marker);
+  });
+
+  window.mapInitialized = true;
+  document.getElementById('pin-count').textContent = ok + ' propert' + (ok === 1 ? 'y' : 'ies') + (skip ? ` (${skip} missing coords)` : '');
+  const tc = document.getElementById('pin-count-toolbar');
+  if (tc) tc.textContent = ok;
+}
+
+function populateTypeFilter(rows) {
+  // filter is in toolbar, always visible
+}
+
+function applyFilter() {
+  const checked = [...document.querySelectorAll('#type-filter-menu input[type=checkbox]:checked')].map(c => c.value);
+  const filtered = allRows.filter(r => {
+    const t = (r[COL_TYPE]||'').trim();
+    if (!t) return true;
+    return checked.includes(t);
+  });
+  renderMarkers(filtered);
+  // Update button label
+  const total = 4;
+  const btn = document.getElementById('type-filter-label');
+  if (btn) btn.textContent = checked.length === total ? 'All types' : checked.length === 0 ? 'None' : checked.join(', ');
+}
+
+function toggleFilterMenu() {
+  const menu = document.getElementById('type-filter-menu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+
+function setStatus(type, text) {
+  document.getElementById('status-dot').className = 'dot ' + type;
+  document.getElementById('status-text').textContent = text;
+}
+
+function startCountdown() {
+  if (countdownTimer) clearInterval(countdownTimer);
+  countdownVal = 300;
+  countdownTimer = setInterval(() => {
+    countdownVal = Math.max(0, countdownVal - 1);
+    const m = Math.floor(countdownVal / 60);
+    const s = countdownVal % 60;
+    document.getElementById('countdown').textContent = m + ':' + String(s).padStart(2,'0');
+  }, 1000);
+}
+
+async function loadAndRender() {
+  if (!csvUrl) return;
+  setStatus('yellow', 'Fetching sheet...');
+  try {
+    const res = await fetch(csvUrl);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    if (!Array.isArray(json) || json.length === 0) { setStatus('red', 'No data found in sheet'); return; }
+    allRows = json.map(row => {
+      const out = {};
+      Object.entries(row).forEach(([k,v]) => out[k.trim()] = String(v).trim());
+      // Clean up address field, append ZIP from Zip column if missing
+      if (out[COL_ADDRESS]) {
+        let addr = out[COL_ADDRESS];
+        const hasZip = /\d{5}/.test(addr);
+        if (!hasZip && out[COL_ZIP] && /\d{5}/.test(out[COL_ZIP])) {
+          addr = addr.replace(/,?\s*$/, '') + ' ' + out[COL_ZIP].trim();
+        }
+        out[COL_ADDRESS] = cleanAddress(addr);
+      }
+      return out;
+    });
+    if (allRows.length === 0) { setStatus('red', 'No data found in sheet'); return; }
+    // Debug: log column headers to console
+    console.log('Columns found:', Object.keys(allRows[0]));
+    console.log('First row sample:', allRows[0]);
+    populateTypeFilter(allRows);
+    applyFilter();
+    document.getElementById('last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    setStatus('green', 'Live');
+    const overlay = document.getElementById('loading-overlay');
+    if (overlay) overlay.style.display = 'none';
+    startCountdown();
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(loadAndRender, REFRESH_MS);
+  } catch(e) {
+    setStatus('red', 'Could not load sheet — check the URL');
+    const overlay = document.getElementById('loading-overlay');
+    if (overlay) overlay.style.display = 'none';
+    document.getElementById('error-msg').style.display = 'block';
+  }
+}
+
+
+
+
+
+
+
+initMap();
+
+// Search functionality
+const searchInput = document.getElementById('search-input');
+const searchResults = document.getElementById('search-results');
+
+let nominatimTimer = null;
+
+function clearSearch() {
+  searchInput.value = '';
+  searchResults.style.display = 'none';
+  document.getElementById('search-clear').style.display = 'none';
+  map.closePopup();
+}
+
+searchInput.addEventListener('input', function() {
+  const clearBtn = document.getElementById('search-clear');
+  if (clearBtn) clearBtn.style.display = this.value ? 'block' : 'none';
+  const q = this.value.trim().toLowerCase();
+  searchResults.innerHTML = '';
+  if (q.length < 2) { searchResults.style.display = 'none'; return; }
+
+  const pinMatches = [];
+
+  // Search through pins first
+  allRows.forEach((row) => {
+    const name    = (row[COL_NAME] || '').toLowerCase();
+    const address = (row[COL_ADDRESS] || '').toLowerCase();
+    const city    = (row[COL_CITY] || '').toLowerCase();
+    const state   = (row[COL_STATE] || '').toLowerCase();
+    if (name.includes(q) || address.includes(q) || city.includes(q) || state.includes(q)) {
+      const coords = parseLatLng(row[COL_LATLNG]);
+      if (coords) pinMatches.push({ row, coords });
+    }
+  });
+
+  // Show pin matches first
+  pinMatches.slice(0, 6).forEach(m => {
+    const item = document.createElement('div');
+    item.className = 'search-result';
+    const name = (m.row[COL_NAME] || m.row[COL_ADDRESS] || 'Property').trim();
+    const sub  = (m.row[COL_ADDRESS] || '').trim();
+    item.innerHTML = `<span class="result-icon">📍</span><div><div class="result-name">${name}</div><div class="result-sub">${sub}</div></div>`;
+    item.addEventListener('click', () => {
+      map.flyTo([m.coords.lat, m.coords.lng], 14, { animate: true, duration: 1.2 });
+      setTimeout(() => {
+        markersLayer.eachLayer(layer => {
+          if (Math.abs(layer.getLatLng().lat - m.coords.lat) < 0.0001 &&
+              Math.abs(layer.getLatLng().lng - m.coords.lng) < 0.0001) {
+            layer.openPopup();
+          }
+        });
+      }, 1300);
+      searchResults.style.display = 'none';
+      searchInput.value = name;
+    });
+    searchResults.appendChild(item);
+  });
+
+  // Add a divider + "Search Google Maps" option
+  if (pinMatches.length > 0) {
+    const divider = document.createElement('div');
+    divider.style.cssText = 'padding: 4px 16px; font-size: 11px; color: #8a9eb0; background: #f4f7fa; border-top: 1px solid #eef1f4;';
+    divider.textContent = 'Also search';
+    searchResults.appendChild(divider);
+  }
+
+  // Always add Google Maps search option at bottom
+  const gmapsItem = document.createElement('div');
+  gmapsItem.className = 'search-result';
+  gmapsItem.innerHTML = `<span class="result-icon">🗺️</span><div><div class="result-name">Search "${searchInput.value}" on Google Maps</div><div class="result-sub">Open in new tab</div></div>`;
+  gmapsItem.addEventListener('click', () => {
+    window.open('https://www.google.com/maps/search/' + encodeURIComponent(searchInput.value), '_blank');
+    searchResults.style.display = 'none';
+  });
+  searchResults.appendChild(gmapsItem);
+
+  // Also add Nominatim fly-to after short delay
+  if (nominatimTimer) clearTimeout(nominatimTimer);
+  nominatimTimer = setTimeout(async () => {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=3&countrycodes=us`);
+      const data = await res.json();
+      if (data && data.length > 0) {
+        const nomDivider = document.createElement('div');
+        nomDivider.style.cssText = 'padding: 4px 16px; font-size: 11px; color: #8a9eb0; background: #f4f7fa; border-top: 1px solid #eef1f4;';
+        nomDivider.textContent = 'Locations';
+        searchResults.appendChild(nomDivider);
+        data.forEach(place => {
+          const item = document.createElement('div');
+          item.className = 'search-result';
+          const shortName = place.display_name.split(',').slice(0,3).join(',');
+          item.innerHTML = `<span class="result-icon">🏙️</span><div><div class="result-name">${shortName}</div></div>`;
+          item.addEventListener('click', () => {
+            map.flyTo([parseFloat(place.lat), parseFloat(place.lon)], 12, { animate: true, duration: 1.2 });
+            searchResults.style.display = 'none';
+            searchInput.value = place.display_name.split(',')[0];
+          });
+          searchResults.appendChild(item);
+        });
+      }
+    } catch(e) {}
+  }, 400);
+
+  searchResults.style.display = 'block';
+});
+
+async function flyToQuery(query) {
+  searchResults.style.display = 'none';
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
+    const data = await res.json();
+    if (data && data.length > 0) {
+      map.flyTo([parseFloat(data[0].lat), parseFloat(data[0].lon)], 11, { animate: true, duration: 1.2 });
+      searchInput.value = query;
+    }
+  } catch(e) {}
+}
+
+document.addEventListener('click', e => {
+  if (!document.getElementById('toolbar').contains(e.target)) {
+    searchResults.style.display = 'none';
+  }
+  if (!document.getElementById('type-filter-wrapper').contains(e.target)) {
+    const menu = document.getElementById('type-filter-menu');
+    if (menu) menu.style.display = 'none';
+  }
+});
+
+csvUrl = 'https://script.google.com/macros/s/AKfycbwMFbgsu2b4DOGdn59n3G8el2CaTrA0YiyVnkarFO3pPQx1g1l84_EfMQhdQkX0r4li/exec';
+loadAndRender();
+</script>
+</body>
+</html>
